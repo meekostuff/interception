@@ -17,11 +17,11 @@ Overview
 
 The goal of Interception is facilitating the separation of content from user-interface.
 
-With Interception you can put all stylesheets and scripts (and potentially banner, site navigation and footer) into one separate and shared HTML document. This shared document is called the viewer page. The interception scripts override normal browser navigation so that content is presented as if it was contained in the viewer page. 
+With Interception you can put all stylesheets and scripts (and potentially banner, site navigation and footer) into one separate and shared HTML document. This shared document is called the **viewer-page**. The viewer page must include the interception **runner-script**. This script overrides normal browser navigation so that content is presented as if it was contained in the viewer page. 
 
 Styles and scripts from content pages are also stripped before merging into the viewer page, so they can be used for fallback when Interception is not supported.
 
-The implementation of all this is fairly straight-forward, with the exception of handling the landing-page. Every content page must include the interception boot-script which will *redirect* the browser to the viewer page (assuming the browser supports Interception and scripting is enabled).
+The implementation of all this is fairly straight-forward, with the exception of handling the landing-page. Every content page must include the interception **boot-script** which will *redirect* the browser to the viewer page (assuming the browser supports Interception and scripting is enabled).
 
 ### Browser support
 
@@ -31,8 +31,8 @@ so the fallback behavior of pages is simply defined by their own styles and scri
 rather than the viewer page. 
 
 Interception can run on browsers which support `history.pushState`, native `XMLHttpRequest` and (for now) native `Promise`.
-These are available on recent versions of browsers in significant use today.
-Promises are not available on IE, but are implemented in Edge.
+These are available on recent versions of browsers in significant use today,
+except that Promises are not available on IE - they are only implemented in Edge.
 
 ### License
 
@@ -47,7 +47,6 @@ If you have any questions or comments, don't hesitate to contact the author via
 [web](http://meekostuff.net/), [email](mailto:shogun70@gmail.com) or [twitter](http://twitter.com/meekostuff). 
 
 
-<a name="installation"></a>
 Installation
 ------------
 
@@ -62,18 +61,30 @@ Installation
 	Visually inspect the displayed page for the following possible failures:
 	
 	- text indicating that it is from the viewer page
+	- **TODO:** the test-pages are minimally useful
 	
-3. Source the Interception boot-script into your pages with this line in the `<head>` of each page 
+3. Create a viewer page with styles and scripts but no content.
+Source the Interception runner-script with this line in the `<head>`
+	
+		<script src="/path/to/interception/runner.js"></script>
+		
+	The runner-script 
+	- MUST be in the `<head>` of the page
+	- MUST NOT have `@async` or `@defer`
+	- MUST be before any scripts
+	- MUST be before any stylesheets - `<link rel="stylesheet" />` or `<style>`
+
+4. Source the Interception boot-script into your pages with this line in the `<head>` of each page 
 	
 		<script src="/path/to/interception/boot.js"></script>
 		
 	The boot-script 
 	- MUST be in the `<head>` of the page
 	- MUST NOT have `@async` or `@defer`
-	- SHOULD be before any scripts
-	- SHOULD be before any stylesheets - `<link rel="stylesheet" />` or `<style>`
+	- MUST be before any scripts
+	- MUST be before any stylesheets - `<link rel="stylesheet" />` or `<style>`
 
-More details in [Startup Configuration](#configuration).
+More details in [Boot Configuration](#boot-configuration).
 
 
 Quick Start
@@ -87,7 +98,7 @@ Any page specific scripts, styles or meta-data should go in `<head>`.
 	<head>
 		<!-- source the Interception boot-script -->
 		<script src="/path/to/interception/boot.js"></script>
-		<title>Content</title>
+		<title>Page One</title>
 		<!-- include fallback stylesheets for when Interception doesn't run. -->
 		<style>
 		.styled-from-page { background-color: red; color: white; }
@@ -135,7 +146,7 @@ This process results in a DOM tree something like this:
 	<head>
 		<!-- source the Interception runner-script -->
 		<script src="/path/to/Interception/runner.js"></script>
-		<title>Content</title>
+		<title>Page One</title>
 		<style>
 		.styled-from-viewer { border: 2px solid blue; }
 		</style>
@@ -158,9 +169,8 @@ This process results in a DOM tree something like this:
 	</html>
 
 
-<a name="configuration"></a>
-Startup Configuration
----------------------
+Boot Configuration
+------------------
 
 ### Preparation
 
@@ -215,7 +225,6 @@ When you want to:
 	- repeat step 2 with `path/to/interception/boot.min.js`
 
 
-<a id="boot-options"></a>
 ### Boot options
 
 These options aren't specifically related to the operation of interception. 
@@ -233,7 +242,7 @@ Sources for options are detailed below.
 
 #### From `Meeko.options`
 
-**NOTE** this is how options are set in `options.js`.  
+**NOTE:** this is how options are set in `options.js`.  
 Options can be **preset** by script, like this:
 
     <script>
