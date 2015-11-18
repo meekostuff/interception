@@ -50,9 +50,9 @@ If you have any questions or comments, don't hesitate to contact the author via
 Installation
 ------------
 
-1. Copy or clone the Interception project files to a directory on your server, say 
+1. Copy or clone the Interception project files to a sub-directory of your domain on your server, say 
 	
-		/path/to/interception/
+		path/to/interception/
 
 2. Open a **supported** browser and navigate to the following page
 	
@@ -145,7 +145,7 @@ This process results in a DOM tree something like this:
 	<html>
 	<head>
 		<!-- source the Interception runner-script -->
-		<script src="/path/to/Interception/runner.js"></script>
+		<script src="/path/to/interception/runner.js"></script>
 		<title>Page One</title>
 		<style>
 		.styled-from-viewer { border: 2px solid blue; }
@@ -154,15 +154,14 @@ This process results in a DOM tree something like this:
 	</head>
 	<body>
 
-		<main>
-			<label>Primary Content</label>
-					<h1>Page One<h1>
-					<div class="styled-from-viewer">
-					This content is styled by the viewer stylesheet
-					</div>	
-					<div class="styled-from-page">
-					This content is styled by the page stylesheet which will not apply in the viewer. 
-					</div>	
+		<main><!-- Primary content -->
+			<h1>Page One<h1>
+			<div class="styled-from-viewer">
+			This content is styled by the viewer stylesheet
+			</div>	
+			<div class="styled-from-page">
+			This content is styled by the page stylesheet which will not apply in the viewer. 
+			</div>	
 		</main>
 
 	</body>
@@ -177,32 +176,35 @@ Boot Configuration
 Assuming the default [installation](#installation) was successful,
 use these steps to prepare for site specific configuration.
 
-1. Copy `options.js` from the interception directory to the root directory of your domain.
-	
+1. Copy `viewer.html` from the interception directory to the root directory of your domain.
+
 	If you have unix shell access to the domain's server 
-	
+
 			cd /directory/of/your/domain
+			cp path/to/interception/viewer.html .
+	
+2. Edit the viewer page to source the interception runner-script, replacing this line
+	
+		<script src="runner.js"></script>
+	
+	with this line
+
+		<script src="/path/to/interception/runner.js"></script>
+	
+3. Copy `options.js` from the interception directory to the root directory of your domain.
+	
 			cp path/to/interception/options.js .
 
-2. Concatenate your modified `options.js` with `boot.js` from the interception directory
+4. Concatenate your modified `options.js` with `boot.js` from the interception directory
 and store in `boot.js` of the root directory.
 	
 			cat options.js path/to/interception/boot.js > boot.js
 
-3. Source the modified interception boot-script into your pages -
+5. Source the modified interception boot-script into your pages -
 preferably before any stylesheets - 
 with this line in the `<head>` of each page 
 	
 			<script src="/boot.js"></script>
-
-4. Make sure to test the modifications.  
-	You could symlink to the test directory from the root directory
-	
-			ln -s path/to/interception/test
-	
-	then navigate in the browser to
-	
-			http://your.domain.com/test/page1.html
 
 
 Now you have a simple setup allowing you to:
@@ -214,15 +216,15 @@ When you want to:
 
 + modify options
 	- edit your copy of `options.js`
-	- repeat step 2 to rebuild your boot-script
+	- repeat step 4 to rebuild your boot-script
 
 + update interception
 	- overwrite the interception directory with the latest version
-	- repeat step 2
+	- repeat step 4
 
 + minify boot.js
-	- minify boot.js to boot.min.js in the /path/to/interception directory
-	- repeat step 2 with `path/to/interception/boot.min.js`
+	- minify boot.js to boot.min.js in the path/to/interception directory
+	- repeat step 4 with `path/to/interception/boot.min.js`
 
 
 ### Boot options
