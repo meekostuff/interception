@@ -56,7 +56,7 @@ Installation
 
 2. Open a **supported** browser and navigate to the following page
 	
-		http://your.domain.com/path/to/interception/test/page1.html
+		http://your.domain.com/path/to/interception/test/normal.html
 	
 	Visually inspect the displayed page for the following possible failures:
 	
@@ -229,7 +229,6 @@ When you want to:
 
 ### Boot options
 
-These options aren't specifically related to the operation of interception. 
 The boot-script has the following options (default values in **bold**).
 
 - no_boot: **false**, true
