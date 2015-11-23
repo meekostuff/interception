@@ -1,7 +1,7 @@
 Interception
 ============
 
-Adapt your web-site from within the browser by *intercepting* 
+Freely adapt your web-site from within the browser by *intercepting* 
 page loading (including the landing page), hyperlink clicks and form submission.
 
 Interception is intended to be a starting point for other frameworks.
@@ -15,13 +15,16 @@ Expect the APIs to change and the documentation to be out-of-date.
 Overview
 --------
 
-The goal of Interception is facilitating the separation of content from user-interface.
+Interception facilitates the separation of content from user-interface.
+The holy-grail for Interception is that it will allow HTML generators to solely focus on simple semantic markup (with minimal default styling) while all richer layout, styling and UI matters are delegated to a separate document. The hope is that this results in web-pages (and sites) with simple, clean markup which are robust in the widest contexts - out-of-date browsers, far-future browsers, non-browser user-agents, javascript failure, cross-origin blocking, etc.
 
-With Interception you can put all stylesheets and scripts (and potentially banner, site navigation and footer) into one separate and shared HTML document. This shared document is called the **viewer-page**. The viewer page must include the interception **runner-script**. This script overrides normal browser navigation so that content is presented as if it was contained in the viewer page. 
+With Interception you can put all stylesheets and scripts (and potentially banner, site navigation and footer) into one separate and shared HTMLish document. This shared document is called the **viewer-page**. The viewer page must include the interception **runner-script**. This script overrides normal browser navigation so that content is presented as if it was contained in the viewer page. 
 
 Styles and scripts from content pages are also stripped before merging into the viewer page, so they can be used for fallback when Interception is not supported.
 
-The implementation of all this is fairly straight-forward, with the exception of handling the landing-page. Every content page must include the interception **boot-script** which will *redirect* the browser to the viewer page (assuming the browser supports Interception and scripting is enabled).
+Content markup can also be *transformed* before rendering which allows the removal or addition of auxiliary content, rearranging primary content, or converting semantic HTML into presentation optimized markup.
+
+The implementation of all this is fairly straight-forward, with the exception of handling the landing-page. To solve this, every content page must include the interception **boot-script** which will *redirect* the browser to the viewer page (assuming the browser supports Interception and scripting is enabled).
 
 ### Browser support
 
