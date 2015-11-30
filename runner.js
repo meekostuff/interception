@@ -352,8 +352,8 @@ function dispatchEvent(target, type, params) { // NOTE every JS initiated event 
 		params = type;
 		type = params.type;
 	}
-	var bubbles = 'bubbles' in params ? !!params.bubbles : true;
-	var cancelable = 'cancelable' in params ? !!params.cancelable : true;
+	var bubbles = params && 'bubbles' in params ? !!params.bubbles : true;
+	var cancelable = params && 'cancelable' in params ? !!params.cancelable : true;
 	if (typeof type !== 'string') throw Error('trigger() called with invalid event type');
 	var detail = params && params.detail;
 	var event = document.createEvent('CustomEvent');
@@ -367,11 +367,28 @@ var insertNode = function(conf, refNode, node) { // like imsertAdjacentHTML but 
 	var doc = refNode.ownerDocument;
 	if (doc.adoptNode) node = doc.adoptNode(node); // Safari 5 was throwing because imported nodes had been added to a document node
 	switch(conf) {
+
+	case 'before':
 	case 'beforebegin': refNode.parentNode.insertBefore(node, refNode); break;
+
+	case 'after':
 	case 'afterend': refNode.parentNode.insertBefore(node, refNode.nextSibling); break;
+
+	case 'start':
 	case 'afterbegin': refNode.insertBefore(node, refNode.firstChild); break;
+
+	case 'end':
 	case 'beforeend': refNode.appendChild(node); break;
-	case 'replace': refNode.parentNode.replaceChild(node, refNode);
+
+	case 'replace': refNode.parentNode.replaceChild(node, refNode); break;
+
+	case 'empty':
+	case 'contents': 
+		// TODO DOM.empty(refNode);
+		var child;
+		while (child = refNode.firstChild) refNode.removeChild(child);
+		refNode.appendChild(node);
+		break;
 	}
 	return refNode;
 }
