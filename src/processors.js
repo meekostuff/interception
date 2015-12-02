@@ -66,6 +66,7 @@ transform: function(provider, details) { // TODO how to use details?
 	var srcNode = provider.srcNode;
 	var srcDoc = srcNode.nodeType === 9 ? srcNode : srcNode.ownerDocument;
 	var main;
+	if (details.main) main = DOM.find(details.main, srcNode);
 	if (!main && DOM.matches(srcNode, 'main, [role=main]')) main = srcNode;
 	if (!main) main = DOM.find('main, [role=main]', srcNode);
 	if (!main && srcNode === srcDoc.body) main = srcNode;
