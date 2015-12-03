@@ -580,6 +580,7 @@ var document = window.document;
 var Meeko = window.Meeko;
 var _ = Meeko.stuff;
 var DOM = Meeko.DOM;
+var URL = Meeko.URL;
 var Promise = window.Promise;
 
 var domLoaded = (function() {
@@ -736,7 +737,8 @@ return new Promise(function(resolve, reject) {
 			try { throw Error('XHR failed. url: ' + url + ' status: ' + xhr.status); }
 			catch(err) { reject(err); }
 		}
-		resolve(xhr.response);
+		normalize(xhr.response, { url: url })
+		.then(resolve);
 	}
 	xhr.send();
 });
@@ -745,6 +747,154 @@ return new Promise(function(resolve, reject) {
 
 
 });
+
+
+/*
+	normalize() is called between html-parsing (internal) and document transformation (external function).
+*/
+function normalize(doc, details) { 
+
+	var baseURL = new URL(details.url);
+
+	_.forEach(DOM.findAll('style', doc.body), function(node) { // TODO support <style scoped>
+		doc.head.appendChild(node); // NOTE no adoption
+	});
+	
+	_.forEach(DOM.findAll('style', doc.head), function(node) {
+		// TODO the following rewrites url() property values but isn't robust
+		var text = node.textContent;
+		var replacements = 0;
+		text = text.replace(/\burl\(\s*(['"]?)([^\r\n]*)\1\s*\)/ig, function(match, quote, url) {
+				absURL = baseURL.resolve(url);
+				if (absURL === url) return match;
+				replacements++;
+				return "url(" + quote + absURL + quote + ")";
+			});
+		if (replacements) node.textContent = text;
+	});
+
+	return resolveAll(doc, baseURL, false);
+}
+
+/*
+	resolveAll() resolves all URL attributes
+*/
+var resolveAll = function(doc, baseURL) {
+
+	return Promise.pipe(null, [
+
+	function () {
+		var selector = Object.keys(urlAttributes).join(', ');
+		return DOM.findAll(selector, doc);
+	},
+
+	function(nodeList) {
+		// return Promise.reduce(null, nodeList, function(dummy, el) {
+		_.forEach(nodeList, function(el) {
+			var tag = DOM.getTagName(el);
+			var attrList = urlAttributes[tag];
+			_.forOwn(attrList, function(attrDesc, attrName) {
+				if (!el.hasAttribute(attrName)) return;
+				attrDesc.resolve(el, baseURL);
+			});
+		});
+	},
+
+	function() {
+		return doc;
+	}
+
+	]);
+
+}
+
+
+var urlAttributes = URL.attributes = (function() {
+	
+var AttributeDescriptor = function(tagName, attrName, loads, compound) {
+	var testEl = document.createElement(tagName);
+	var supported = attrName in testEl;
+	var lcAttr = _.lc(attrName); // NOTE for longDesc, etc
+	_.defaults(this, { // attrDesc
+		tagName: tagName,
+		attrName: attrName,
+		loads: loads,
+		compound: compound,
+		supported: supported
+	});
+}
+
+_.defaults(AttributeDescriptor.prototype, {
+
+resolve: function(el, baseURL) {
+	var attrName = this.attrName;
+	var url = el.getAttribute(attrName);
+	if (url == null) return;
+	var finalURL = this.resolveURL(url, baseURL)
+	if (finalURL !== url) el.setAttribute(attrName, finalURL);
+},
+
+resolveURL: function(url, baseURL) {
+	var relURL = url.trim();
+	var finalURL = relURL;
+	switch (relURL.charAt(0)) {
+		case '': // empty, but not null. TODO should this be a warning??
+			break;
+		
+		default:
+			finalURL = baseURL.resolve(relURL);
+			break;
+	}
+	return finalURL;
+}
+
+});
+
+var urlAttributes = {};
+_.forEach(_.words('link@<href script@<src img@<longDesc,<src,+srcset iframe@<longDesc,<src object@<data embed@<src video@<poster,<src audio@<src source@<src,+srcset input@formAction,<src button@formAction,<src a@+ping,href area@href q@cite blockquote@cite ins@cite del@cite form@action'), function(text) {
+	var m = text.split('@'), tagName = m[0], attrs = m[1];
+	var attrList = urlAttributes[tagName] = {};
+	_.forEach(attrs.split(','), function(attrName) {
+		var downloads = false;
+		var compound = false;
+		var modifier = attrName.charAt(0);
+		switch (modifier) {
+		case '<':
+			downloads = true;
+			attrName = attrName.substr(1);
+			break;
+		case '+':
+			compound = true;
+			attrName = attrName.substr(1);
+			break;
+		}
+		attrList[attrName] = new AttributeDescriptor(tagName, attrName, downloads, compound);
+	});
+});
+
+function resolveSrcset(urlSet, baseURL) {
+	var urlList = urlSet.split(/\s*,\s*/); // FIXME this assumes URLs don't contain ','
+	_.forEach(urlList, function(urlDesc, i) {
+		urlList[i] = urlDesc.replace(/^\s*(\S+)(?=\s|$)/, function(all, url) { return baseURL.resolve(url); });
+	});
+	return urlList.join(', ');
+}
+
+urlAttributes['img']['srcset'].resolveURL = resolveSrcset;
+urlAttributes['source']['srcset'].resolveURL = resolveSrcset;
+
+urlAttributes['a']['ping'].resolveURL = function(urlSet, baseURL) {
+	var urlList = urlSet.split(/\s+/);
+	_.forEach(urlList, function(url, i) {
+		urlList[i] = baseURL.resolve(url);
+	});
+	return urlList.join(' ');
+}
+
+return urlAttributes;
+
+})();
+
 
 var frameRate = 60;
 var frameInterval = 1000/frameRate;
