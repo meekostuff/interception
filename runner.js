@@ -567,6 +567,7 @@ return {
 
 /* TODO
 	+ hide (at runtime) / show (after stylesheets loaded)
+	+ maybe `interceptor.fetch|transform|transclude` should be on `window`. 
  */
 
 (function() {
@@ -582,6 +583,10 @@ var _ = Meeko.stuff;
 var DOM = Meeko.DOM;
 var URL = Meeko.URL;
 var Promise = window.Promise;
+
+/*
+	domLoaded - intercepts DOMContentLoaded and window.onload
+*/
 
 var domLoaded = (function() {
 // WARN this function assumes document.readyState is available
@@ -629,6 +634,98 @@ function onComplete(e) {
 })();
 
 
+/*
+	historyManager
+	- wrapper for `history` mostly to cloak pushState|replaceState, and popstate events
+*/
+
+var historyManager = Meeko.historyManager = (function() {
+
+var historyManager = {};
+
+var stateTag = 'interception';
+var started = false;
+
+// cloak history.pushState|replaceState
+history._pushState = history.pushState;
+history.pushState = function() { console.warn('history.pushState() is no-op.'); }
+history._replaceState = history.replaceState;
+history.replaceState = function() { console.warn('history.replaceState() is no-op.'); }
+// cloak location.assign|replacej
+location._assign = location.assign;
+location.assign = function() { console.warn('location.assign() is no-op.'); }
+location._replace = location.replace;
+location.replace = function() { console.warn('location.replace() is no-op.'); }
+
+window.addEventListener('popstate', function(e) {
+		if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+		else e.stopPropagation();
+		
+		if (!e.state[stateTag]) {
+			console.warn('Ignoring invalid PopStateEvent');
+			return;
+		}
+		if (!historyManager.onPopState) return;
+		return historyManager.onPopState(e.state);
+	}, true);
+
+
+_.defaults(historyManager, {
+
+start: function(data, title, url, onNewState, onPopState) { // FIXME this should call onPopState if history.state is defined
+	if (started) throw Error('historyManager has already started');
+	started = true;
+	this.onPopState = onPopState;
+	var newState = State.create(data, title, url);
+	history._replaceState(newState, title, url);
+	return onNewState(newState);
+},
+
+newState: function(data, title, url, useReplace) {
+	var newState = createState(data, title, url);
+	if (useReplace) history._replaceState(newState, title, url);
+	else history._pushState(newState, title, url);
+},
+
+replaceState: function(data, title, url) {
+	return this.newState(data, title, url, true);
+},
+
+pushState: function(data, title, url) {
+	return this.newState(data, title, url, false);
+},
+
+updateState: function(data) {
+	var oldState = history.state;
+	var state = _.assign({}, oldState);
+	state.data = _.assign({}, oldState.data);
+	_.assign(state.data, data);
+	history._replaceState(state);
+}
+
+});
+
+var createState = function(data, title, url) {
+	var timeStamp = Date.now();
+	var state = {
+		title: title,
+		url: url,
+		timeStamp: timeStamp,
+		data: data
+	};
+	state[stateTag] = true;
+	return state;
+}
+
+return historyManager;
+
+})();
+
+
+/*
+	interceptor
+*/
+
 var interceptor = Meeko.interceptor = {};
 
 var started = false;
@@ -654,7 +751,7 @@ start: function(options) {
 	
 	var interceptor = this;
 
-	history.replaceState(null, url, url);
+	historyManager.replaceState(null, url, url);
 	document.title = url;
 
 	var docFu = interceptor.fetch(url);
@@ -663,17 +760,18 @@ start: function(options) {
 
 	function() {
 		interceptor.manageEvent('click');
-		interceptor.manageEvent('submit');
 		window.addEventListener('click', function(e) {
 			if (e.defaultPrevented) return;
 			var acceptDefault = interceptor.onClick(e);
 			if (acceptDefault === false) e.preventDefault();
-		}, false); // onClick generates requestnavigation event
+		}, false); // onClick conditionally generates requestnavigation event
+
+		interceptor.manageEvent('submit');
 		window.addEventListener('submit', function(e) {
 			if (e.defaultPrevented) return;
 			var acceptDefault = interceptor.onSubmit(e);
 			if (acceptDefault === false) e.preventDefault();
-		}, false);
+		}, false); // onSubmit conditionally generates requestnavigation event
 	},
 
 	function() { return options && options.waitUntil; },
@@ -691,7 +789,7 @@ start: function(options) {
 	},
 
 	function(doc) {
-		history.replaceState(null, doc.title, url); // FIXME implement `state` management
+		historyManager.replaceState(null, doc.title, url);
 		document.title = doc.title;
 		return interceptor.transclude(doc, DEFAULT_TRANSFORM_ID, 'replace', document.body);
 	},
@@ -849,7 +947,7 @@ triggerRequestNavigation: function(url, details) {
 			);
 
 		if (acceptDefault !== false) {
-			location.assign(details.url);
+			location._assign(details.url);
 		}
 	});
 }
@@ -860,6 +958,7 @@ triggerRequestNavigation: function(url, details) {
 
 /*
 	normalize() is called between html-parsing (internal) and document transformation (external function).
+	TODO: maybe this should be interceptor.normalize()
 */
 function normalize(doc, details) { 
 
@@ -882,11 +981,12 @@ function normalize(doc, details) {
 		if (replacements) node.textContent = text;
 	});
 
-	return resolveAll(doc, baseURL, false);
+	return resolveAll(doc, baseURL);
 }
 
 /*
 	resolveAll() resolves all URL attributes
+	TODO: maybe this should be URL.resolveAll()
 */
 var resolveAll = function(doc, baseURL) {
 
@@ -957,10 +1057,10 @@ resolveURL: function(url, baseURL) {
 	return finalURL;
 }
 
-});
+}); // # end AttributeDescriptor.prototype
 
 var urlAttributes = {};
-_.forEach(_.words('link@<href script@<src img@<longDesc,<src,+srcset iframe@<longDesc,<src object@<data embed@<src video@<poster,<src audio@<src source@<src,+srcset input@formAction,<src button@formAction,<src a@+ping,href area@href q@cite blockquote@cite ins@cite del@cite form@action'), function(text) {
+_.forEach(_.words('link@<href script@<src img@<longdesc,<src,+srcset iframe@<longdesc,<src object@<data embed@<src video@<poster,<src audio@<src source@<src,+srcset input@formaction,<src button@formaction,<src a@+ping,href area@href q@cite blockquote@cite ins@cite del@cite form@action'), function(text) {
 	var m = text.split('@'), tagName = m[0], attrs = m[1];
 	var attrList = urlAttributes[tagName] = {};
 	_.forEach(attrs.split(','), function(attrName) {
