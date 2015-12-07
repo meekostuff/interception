@@ -661,6 +661,21 @@ start: function(options) {
 
 	return Promise.pipe(domLoaded, [
 
+	function() {
+		interceptor.manageEvent('click');
+		interceptor.manageEvent('submit');
+		window.addEventListener('click', function(e) {
+			if (e.defaultPrevented) return;
+			var acceptDefault = interceptor.onClick(e);
+			if (acceptDefault === false) e.preventDefault();
+		}, false); // onClick generates requestnavigation event
+		window.addEventListener('submit', function(e) {
+			if (e.defaultPrevented) return;
+			var acceptDefault = interceptor.onSubmit(e);
+			if (acceptDefault === false) e.preventDefault();
+		}, false);
+	},
+
 	function() { return options && options.waitUntil; },
 
 	function() {
@@ -743,6 +758,100 @@ return new Promise(function(resolve, reject) {
 	xhr.send();
 });
 
+},
+
+managedEvents: [],
+
+manageEvent: function(type) {
+	if (_.includes(this.managedEvents, type)) return;
+	this.managedEvents.push(type);
+	window.addEventListener(type, function(event) {
+		// NOTE stopPropagation() prevents custom default-handlers from running. DOMSprockets nullifies it.
+		event.stopPropagation = function() { console.warn('event.stopPropagation() is a no-op'); }
+		event.stopImmediatePropagation = function() { console.warn('event.stopImmediatePropagation() is a no-op'); }
+	}, true);
+},
+
+onClick: function(e) { // return false means success
+	var interceptor = this;
+
+	if (e.button != 0) return; // FIXME what is the value for button in IE's W3C events model??
+	if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return; // FIXME do these always trigger modified click behavior??
+
+	// Find closest <a href> to e.target
+	var linkElement = DOM.closest(e.target, 'a, [link]');
+	if (!linkElement) return;
+	var hyperlink;
+	if (DOM.getTagName(linkElement) === 'a') hyperlink = linkElement;
+	else {
+		hyperlink = DOM.find('a, link', linkElement);
+		if (!hyperlink) hyperlink = DOM.closest('a', linkElement);
+		if (!hyperlink) return;
+	}
+	var href = hyperlink.getAttribute('href');
+	if (!href) return; // not really a hyperlink
+
+	var baseURL = new URL(document.URL);
+	var url = baseURL.resolve(href); // TODO probably don't need to resolve on browsers that support pushstate
+
+	// NOTE The following creates a pseudo-event and dispatches to frames in a bubbling order.
+	// FIXME May as well use a virtual event system, e.g. DOMSprockets
+	var details = {
+		url: url,
+		element: hyperlink
+	}; // TODO more details?? event??
+
+	interceptor.triggerRequestNavigation(details.url, details);
+	return false;
+},
+
+onSubmit: function(e) { // return false means success
+	var interceptor = this;
+
+	// test submit
+	var form = e.target;
+	if (form.target) return; // no iframe
+	var baseURL = new URL(document.URL);
+	var action = baseURL.resolve(form.action); // TODO probably don't need to resolve on browsers that support pushstate
+	
+	var details = {
+		element: form
+	};
+	var method = _.lc(form.method);
+	switch(method) {
+	case 'get':
+		var oURL = URL(action);
+		var query = encode(form);
+		details.url = oURL.nosearch + (oURL.search || '?') + query + oURL.hash;
+		break;
+	default: return; // TODO handle POST
+	}
+	
+	interceptor.triggerRequestNavigation(details.url, details);
+	return false;
+	
+	function encode(form) { // FIXME MUST match browser implementations of encode
+		var data = [];
+		_.forEach(form.elements, function(el) {
+			if (!el.name) return;
+			data.push(el.name + '=' + encodeURIComponent(el.value));
+		});
+		return data.join('&');
+	}
+},
+
+triggerRequestNavigation: function(url, details) {
+	Promise.defer(function() {
+		var acceptDefault = DOM.dispatchEvent(
+				details.element, 
+				'requestnavigation', 
+				{ detail: details.url }
+			);
+
+		if (acceptDefault !== false) {
+			location.assign(details.url);
+		}
+	});
 }
 
 
@@ -768,7 +877,7 @@ function normalize(doc, details) {
 				absURL = baseURL.resolve(url);
 				if (absURL === url) return match;
 				replacements++;
-				return "url(" + quote + absURL + quote + ")";
+				return 'url(' + quote + absURL + quote + ')';
 			});
 		if (replacements) node.textContent = text;
 	});
