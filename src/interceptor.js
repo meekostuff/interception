@@ -199,14 +199,14 @@ start: function(options) {
 	return Promise.pipe(domLoaded, [
 
 	function() {
-		interceptor.manageEvent('click');
+		DOM.manageEvent('click');
 		window.addEventListener('click', function(e) {
 			if (e.defaultPrevented) return;
 			var acceptDefault = interceptor.onClick(e);
 			if (acceptDefault === false) e.preventDefault();
 		}, false); // onClick conditionally generates requestnavigation event
 
-		interceptor.manageEvent('submit');
+		DOM.manageEvent('submit');
 		window.addEventListener('submit', function(e) {
 			if (e.defaultPrevented) return;
 			var acceptDefault = interceptor.onSubmit(e);
@@ -296,18 +296,6 @@ return new Promise(function(resolve, reject) {
 	xhr.send();
 });
 
-},
-
-managedEvents: [],
-
-manageEvent: function(type) {
-	if (_.includes(this.managedEvents, type)) return;
-	this.managedEvents.push(type);
-	window.addEventListener(type, function(event) {
-		// NOTE stopPropagation() prevents custom default-handlers from running. DOMSprockets nullifies it.
-		event.stopPropagation = function() { console.warn('event.stopPropagation() is a no-op'); }
-		event.stopImmediatePropagation = function() { console.warn('event.stopImmediatePropagation() is a no-op'); }
-	}, true);
 },
 
 onClick: function(e) { // return false means success

@@ -452,6 +452,18 @@ function dispatchEvent(target, type, params) { // NOTE every JS initiated event 
 	return target.dispatchEvent(event);
 }
 
+var managedEvents = [];
+
+function manageEvent(type) {
+	if (_.includes(managedEvents, type)) return;
+	managedEvents.push(type);
+	window.addEventListener(type, function(event) {
+		// NOTE stopPropagation() prevents custom default-handlers from running. DOMSprockets nullifies it.
+		event.stopPropagation = function() { console.warn('event.stopPropagation() is a no-op'); }
+		event.stopImmediatePropagation = function() { console.warn('event.stopImmediatePropagation() is a no-op'); }
+	}, true);
+}
+
 
 var insertNode = function(conf, refNode, node) { // like imsertAdjacentHTML but with a node and auto-adoption
 	var doc = refNode.ownerDocument;
@@ -548,7 +560,7 @@ return {
 	getTagName: getTagName,
 	contains: contains, matches: matches,
 	findId: findId, find: find, findAll: findAll, closest: closest, siblings: siblings,
-	dispatchEvent: dispatchEvent,
+	dispatchEvent: dispatchEvent, manageEvent: manageEvent,
 	cloneContents: cloneContents, adoptContents: adoptContents,
 	insertNode: insertNode, 
 	checkStyleSheets: checkStyleSheets
@@ -759,14 +771,14 @@ start: function(options) {
 	return Promise.pipe(domLoaded, [
 
 	function() {
-		interceptor.manageEvent('click');
+		DOM.manageEvent('click');
 		window.addEventListener('click', function(e) {
 			if (e.defaultPrevented) return;
 			var acceptDefault = interceptor.onClick(e);
 			if (acceptDefault === false) e.preventDefault();
 		}, false); // onClick conditionally generates requestnavigation event
 
-		interceptor.manageEvent('submit');
+		DOM.manageEvent('submit');
 		window.addEventListener('submit', function(e) {
 			if (e.defaultPrevented) return;
 			var acceptDefault = interceptor.onSubmit(e);
@@ -856,18 +868,6 @@ return new Promise(function(resolve, reject) {
 	xhr.send();
 });
 
-},
-
-managedEvents: [],
-
-manageEvent: function(type) {
-	if (_.includes(this.managedEvents, type)) return;
-	this.managedEvents.push(type);
-	window.addEventListener(type, function(event) {
-		// NOTE stopPropagation() prevents custom default-handlers from running. DOMSprockets nullifies it.
-		event.stopPropagation = function() { console.warn('event.stopPropagation() is a no-op'); }
-		event.stopImmediatePropagation = function() { console.warn('event.stopImmediatePropagation() is a no-op'); }
-	}, true);
 },
 
 onClick: function(e) { // return false means success
