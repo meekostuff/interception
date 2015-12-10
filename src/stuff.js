@@ -59,6 +59,12 @@ var find = function(a, fn, context) {
 
 var words = function(text) { return text.split(/\s+/); }
 
+var forIn = function(object, fn, context) {
+	for (var key in object) {
+		fn.call(context, object[key], key, object);
+	}
+}
+
 var forOwn = function(object, fn, context) {
 	var keys = Object.keys(object);
 	for (var i=0, n=keys.length; i<n; i++) {
@@ -92,11 +98,50 @@ assign(Meeko.stuff, {
 	uc: uc, lc: lc, words: words, // string
 	contains: includes, // FIXME deprecated
 	includes: includes, forEach: forEach, some: some, every: every, map: map, filter: filter, find: find, // array
-	forOwn: forOwn, isEmpty: isEmpty, defaults: defaults, assign: assign, extend: assign // object
+	forIn: forIn, forOwn: forOwn, isEmpty: isEmpty, defaults: defaults, assign: assign, extend: assign // object
 });
 
 
 var _ = Meeko.stuff;
+
+/*
+ ### extend console
+	+ `console.logLevel` allows logging to be switched off
+	
+	NOTE:
+	+ this assumes log, info, warn, error are defined
+*/
+
+var console = this.console;
+if (!console.debug) console.debug = console.log;
+var logLevels = _.words('all debug log info warn error none');
+_.forEach(logLevels, function(level) {
+	var _level = '_' + level;
+	if (!console[level]) return;
+	console[_level] = console[level];
+});
+
+var currentLogLevel = 'all';
+
+Object.defineProperty(console, 'logLevel', {
+	get: function() { return currentLogLevel; },
+	set: function(newLevel) {
+		newLevel = _.lc(newLevel);
+		if (logLevels.indexOf(newLevel) < 0) return; // WARN??
+		currentLogLevel = newLevel;
+		var found = false;
+		_.forEach(logLevels, function(level) {
+			var _level = '_' + level;
+			if (level === newLevel) found = true;
+			if (!console[_level] || !found) console[level] = function() {};
+			else console[level] = console[_level];
+		});
+	}
+});
+
+console.logLevel = 'warn'; // FIXME should be a boot-option
+console.info('logLevel: ' + console.logLevel);
+
 
 /*
  ### extend Promise
