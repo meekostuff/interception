@@ -52,7 +52,7 @@ var init = function(href, baseURL) {
 var keys = ['source','protocol','hostname','port','pathname','search','hash'];
 var parser = /^([^:\/?#]+:)?(?:\/\/([^:\/?#]*)(?::(\d*))?)?([^?#]*)?(\?[^#]*)?(#.*)?$/;
 
-var parse = window.URL && 'href' in window.URL.prototype ? 
+var parse = ((typeof window.URL === 'function') && ('href' in window.URL.prototype)) ? 
 function(href) {
 	return new window.URL(href);
 } :
