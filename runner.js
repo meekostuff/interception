@@ -700,9 +700,6 @@ var historyManager = Meeko.historyManager = (function() {
 
 var historyManager = {};
 
-var stateTag = 'interception';
-var started = false;
-
 // cloak history.pushState|replaceState
 history._pushState = history.pushState;
 history.pushState = function() { console.warn('history.pushState() is no-op.'); }
@@ -718,61 +715,111 @@ window.addEventListener('popstate', function(e) {
 		if (e.stopImmediatePropagation) e.stopImmediatePropagation();
 		else e.stopPropagation();
 		
-		if (!e.state[stateTag]) {
-			console.warn('Ignoring invalid PopStateEvent');
-			return;
-		}
-		if (!historyManager.onPopState) return;
 		return historyManager.onPopState(e.state);
 	}, true);
 
+var stateStore = {};
+var currentState;
+var nextState;
+var popStateHandler;
 
+function createState(data) {
+	var timeStamp = Date.now();
+	var state = _.assign({}, data);
+	state.timeStamp = timeStamp;
+	var id = timeStamp;
+	stateStore[id] = state;
+	return id;
+}
+
+function lookupState(id) {
+	return stateStore[id];
+}
+
+var started = false;
+
+// FIXME historyManager methods - apart from start() - should throw until start()
 _.defaults(historyManager, {
 
-start: function(data, title, url, onNewState, onPopState) { // FIXME this should call onPopState if history.state is defined
+start: function(onInitialState, onPopState) { // FIXME this should call onPopState if history.state is defined
 	if (started) throw Error('historyManager has already started');
 	started = true;
-	this.onPopState = onPopState;
-	var newState = State.create(data, title, url);
-	history._replaceState(newState, title, url);
-	return onNewState(newState);
+	popStateHandler = onPopState;
+	data = {
+		url: document.URL,
+		title: document.title
+	};
+	var id = this.createState(data);
+	var state = lookupState(id);
+
+	history._replaceState(state, state.title);
+	currentState = id;
+
+	return onInitialState(id);
 },
 
-newState: function(data, title, url, useReplace) {
-	var newState = createState(data, title, url);
-	if (useReplace) history._replaceState(newState, title, url);
-	else history._pushState(newState, title, url);
+onPopState: function(state) {
+	if (!popStateHandler) return;
+	return popStateHandler(state.timeStamp);
 },
 
-replaceState: function(data, title, url) {
-	return this.newState(data, title, url, true);
+createState: function(data) {
+	try { new URL(data.url); }
+	catch (err) { throw Error('createState(data) MUST receive a fully-resolved `url`'); }
+	if (data.title == null) throw Error('createState(data) MUST receive a `title`');
+
+	return createState(data);
 },
 
-pushState: function(data, title, url) {
-	return this.newState(data, title, url, false);
+getState: function(id) {
+	return lookupState(id);
 },
 
-updateState: function(data) {
-	var oldState = history.state;
-	var state = _.assign({}, oldState);
-	state.data = _.assign({}, oldState.data);
-	_.assign(state.data, data);
-	history._replaceState(state);
+isCurrentState: function(id) {
+	return currentState === id;
+},
+
+predictState: function(id) {
+	if (!lookupState(id)) throw Error('Invalid state ID: ' + id);
+	nextState = id;
+	return true;
+},
+
+cancelState: function(id) {
+	if (currentState === id) return false;
+	if (nextState !== id) return true;
+	nextState = undefined;
+	return true;
+},
+
+confirmState: function(id, useReplace) { // TODO can't confirmState during popstate
+	if (currentState === id) return false;
+	if (nextState !== id) return false;
+	var state = lookupState(id);
+	var title = state.title;
+	var url = state.url;
+
+	if (useReplace) history._replaceState(state, title, url);
+	else history._pushState(state, title, url);
+	currentState = id;
+
+	return true;
+},
+
+updateState: function(id, data) {
+	var state = lookupState(id);
+	var timeStamp = state.timeStamp;
+	_.assign(state, data);
+	state.timeStamp = timeStamp;
+
+	stateStore[id] = state;
+	if (!this.isCurrentState(id)) return;
+	
+	history._replaceState(state, state.title, state.url);
 }
 
 });
 
-var createState = function(data, title, url) {
-	var timeStamp = Date.now();
-	var state = {
-		title: title,
-		url: url,
-		timeStamp: timeStamp,
-		data: data
-	};
-	state[stateTag] = true;
-	return state;
-}
 
 return historyManager;
 
@@ -792,6 +839,7 @@ domLoaded.then(function() { // fallback
 	});
 });
 
+// FIXME interceptor methods - apart from start() - should throw until start()
 _.assign(interceptor, {
 
 DEFAULT_TRANSFORM_ID: DEFAULT_TRANSFORM_ID,
@@ -808,7 +856,13 @@ start: function(options) {
 	
 	var interceptor = this;
 
-	historyManager.replaceState(null, url, url);
+	var stateId;
+	historyManager.start(function(id) { stateId = id; });
+
+	historyManager.updateState(stateId, {
+		url: url,
+		title: url
+	});
 	document.title = url;
 
 	var docFu = interceptor.fetch(url);
@@ -846,7 +900,10 @@ start: function(options) {
 	},
 
 	function(doc) {
-		historyManager.replaceState(null, doc.title, url);
+		historyManager.updateState(stateId, {
+			url: url, // not necessary - already set above
+			title: doc.title
+		});
 		document.title = doc.title;
 		return interceptor.transclude(doc, DEFAULT_TRANSFORM_ID, 'replace', document.body);
 	},
