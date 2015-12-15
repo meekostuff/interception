@@ -706,6 +706,7 @@ history.pushState = function() { console.warn('history.pushState() is no-op.'); 
 history._replaceState = history.replaceState;
 history.replaceState = function() { console.warn('history.replaceState() is no-op.'); }
 // cloak location.assign|replacej
+// FIXME location.assign|replace should be JS equivalents of browser functionality
 location._assign = location.assign;
 location.assign = function() { console.warn('location.assign() is no-op.'); }
 location._replace = location.replace;
@@ -870,19 +871,27 @@ start: function(options) {
 	return Promise.pipe(domLoaded, [
 
 	function() {
-		DOM.manageEvent('click');
-		window.addEventListener('click', function(e) {
-			if (e.defaultPrevented) return;
-			var acceptDefault = interceptor.onClick(e);
-			if (acceptDefault === false) e.preventDefault();
-		}, false); // onClick conditionally generates requestnavigation event
+		_.forEach(_.words('click mousedown'), function(type) { // FIXME touchstart, etc
 
-		DOM.manageEvent('submit');
-		window.addEventListener('submit', function(e) {
-			if (e.defaultPrevented) return;
-			var acceptDefault = interceptor.onSubmit(e);
-			if (acceptDefault === false) e.preventDefault();
-		}, false); // onSubmit conditionally generates requestnavigation event
+			DOM.manageEvent(type);
+			window.addEventListener(type, function(e) {
+				if (e.defaultPrevented) return;
+				var acceptDefault = interceptor.onClick(e);
+				if (acceptDefault === false) e.preventDefault();
+			}, false); // onClick conditionally generates requestnavigation event
+
+		});
+
+		_.forEach(_.words('sbumit'), function(type) { // FIXME touchstart, etc
+
+			DOM.manageEvent(type);
+			window.addEventListener(type, function(e) {
+				if (e.defaultPrevented) return;
+				var acceptDefault = interceptor.onSubmit(e);
+				if (acceptDefault === false) e.preventDefault();
+			}, false); // onSubmit conditionally generates requestnavigation event
+
+		});
 	},
 
 	function() { return options && options.waitUntil; },
@@ -1001,7 +1010,8 @@ onClick: function(e) { // return false means success
 		element: hyperlink
 	}; // TODO more details?? event??
 
-	interceptor.triggerRequestNavigation(details.url, details);
+	var predicting = (e.type !== 'click');
+	interceptor.triggerNavigationEvent(details.url, details, predicting);
 	return false;
 },
 
@@ -1027,7 +1037,7 @@ onSubmit: function(e) { // return false means success
 	default: return; // TODO handle POST
 	}
 	
-	interceptor.triggerRequestNavigation(details.url, details);
+	interceptor.triggerNavigationEvent(details.url, details);
 	return false;
 	
 	function encode(form) { // FIXME MUST match browser implementations of encode
@@ -1040,13 +1050,16 @@ onSubmit: function(e) { // return false means success
 	}
 },
 
-triggerRequestNavigation: function(url, details) {
+triggerNavigationEvent: function(url, details, predicting) {
+	var type = predicting ? 'predictnavigation' : 'requestnavigation';
 	Promise.defer(function() {
 		var acceptDefault = DOM.dispatchEvent(
 				details.element, 
-				'requestnavigation', 
+				type,
 				{ detail: details.url }
 			);
+
+		if (predicting) return;
 
 		if (acceptDefault !== false) {
 			location._assign(details.url);
