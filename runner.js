@@ -705,12 +705,6 @@ history._pushState = history.pushState;
 history.pushState = function() { console.warn('history.pushState() is no-op.'); }
 history._replaceState = history.replaceState;
 history.replaceState = function() { console.warn('history.replaceState() is no-op.'); }
-// cloak location.assign|replacej
-// FIXME location.assign|replace should be JS equivalents of browser functionality
-location._assign = location.assign;
-location.assign = function() { console.warn('location.assign() is no-op.'); }
-location._replace = location.replace;
-location.replace = function() { console.warn('location.replace() is no-op.'); }
 
 window.addEventListener('popstate', function(e) {
 		if (e.stopImmediatePropagation) e.stopImmediatePropagation();
@@ -833,6 +827,13 @@ return historyManager;
 
 var interceptor = Meeko.interceptor = {};
 
+// cloak location.assign|replacej
+// FIXME location.assign|replace should be JS equivalents of browser functionality
+location._assign = location.assign;
+location.assign = function() { console.warn('location.assign() is no-op.'); }
+location._replace = location.replace;
+location.replace = function() { console.warn('location.replace() is no-op.'); }
+
 var started = false;
 domLoaded.then(function() { // fallback
 	if (!started) interceptor.start({
@@ -842,6 +843,12 @@ domLoaded.then(function() { // fallback
 
 // FIXME interceptor methods - apart from start() - should throw until start()
 _.assign(interceptor, {
+
+scope: new URL(document.URL).base,
+
+inScope: function(url) { 
+	return url.indexOf(this.scope) === 0;
+},
 
 DEFAULT_TRANSFORM_ID: DEFAULT_TRANSFORM_ID,
 
@@ -927,6 +934,57 @@ start: function(options) {
 	}
 
 	]);
+},
+
+navigate: function(url, useReplace) {
+	var interceptor = this;
+
+	if (!interceptor.inScope(url)) {
+		if (useReplace) location._replace(url);
+		else location._assign(url);
+	}
+
+	var nextState = historyManager.createState({
+		url: url,
+		title: url
+	});
+
+	return Promise.pipe(null, [
+
+	function() {
+		historyManager.predictState(nextState);
+		return interceptor.prerender(url, DEFAULT_TRANSFORM_ID);
+	},
+	function(node) {
+		if (!historyManager.confirmState(nextState, useReplace)) return;
+		DOM.insertNode('replace', document.body, node);
+	}
+	
+	]);
+},
+
+transclusionCache: [],
+
+prerender: function(url, transformId, details) {
+	var interceptor = this;
+
+	return Promise.pipe(url, [
+	function(url) {
+		return interceptor.fetch(url);
+	},
+	function(doc) {
+		return interceptor.transform(doc, transformId, details);
+	},
+	function(node) {
+		interceptor.transclusionCache.push({
+			url: url,
+			transform: transformId,
+			details: details,
+			node: node
+		});
+		return node;
+	}
+	]);	
 },
 
 transclude: function(url, transformId, position, refNode, details) {
@@ -1051,6 +1109,7 @@ onSubmit: function(e) { // return false means success
 },
 
 triggerNavigationEvent: function(url, details, predicting) {
+	var interceptor = this;
 	var type = predicting ? 'predictnavigation' : 'requestnavigation';
 	Promise.defer(function() {
 		var acceptDefault = DOM.dispatchEvent(
@@ -1062,7 +1121,7 @@ triggerNavigationEvent: function(url, details, predicting) {
 		if (predicting) return;
 
 		if (acceptDefault !== false) {
-			location._assign(details.url);
+			interceptor.navigate(details.url);
 		}
 	});
 }
