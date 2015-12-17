@@ -154,8 +154,12 @@ createState: function(data) {
 	return createState(data);
 },
 
-getState: function(id) {
+getStateData: function(id) {
 	return lookupState(id);
+},
+
+getCurrentState: function() {
+	return currentState;
 },
 
 isCurrentState: function(id) {
@@ -253,7 +257,12 @@ start: function(options) {
 	var interceptor = this;
 
 	var stateId;
-	historyManager.start(function(id) { stateId = id; });
+	historyManager.start(
+		function(initialState) { stateId = initialState; }, 
+		function(nextState, prevState) {
+			interceptor.popStateHandler(nextState, prevState);
+		}
+	);
 
 	historyManager.updateState(stateId, {
 		url: url,
@@ -324,6 +333,8 @@ start: function(options) {
 	]);
 },
 
+bfCache: {},
+
 navigate: function(url, useReplace) {
 	var interceptor = this;
 
@@ -344,11 +355,25 @@ navigate: function(url, useReplace) {
 		return interceptor.prerender(url, DEFAULT_TRANSFORM_ID);
 	},
 	function(node) {
+		var prevState = historyManager.getCurrentState();
 		if (!historyManager.confirmState(nextState, useReplace)) return;
+		interceptor.bfCache[prevState] = {
+			body: document.body
+		};
 		DOM.insertNode('replace', document.body, node);
 	}
 	
 	]);
+},
+
+popStateHandler: function(nextState, prevState) {
+	var interceptor = this;
+	var bodyCache = interceptor.bfCache;
+	bodyCache[prevState] = {
+		body: document.body
+	};
+	var node = bodyCache[nextState].body;
+	DOM.insertNode('replace', document.body, node);
 },
 
 transclusionCache: [],
