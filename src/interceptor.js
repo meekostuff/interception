@@ -98,7 +98,7 @@ window.addEventListener('popstate', function(e) {
 
 var stateStore = {};
 var currentState;
-var nextState;
+var predictedState;
 var popStateHandler;
 
 function createState(data) {
@@ -137,8 +137,13 @@ start: function(onInitialState, onPopState) { // FIXME this should call onPopSta
 },
 
 onPopState: function(state) {
+	var prevState = currentState;
+	var nextState = state.timeStamp;
+	currentState = nextState;
+	predictedState = undefined;
 	if (!popStateHandler) return;
-	return popStateHandler(state.timeStamp);
+	
+	return popStateHandler(nextState, prevState);
 },
 
 createState: function(data) {
@@ -159,20 +164,20 @@ isCurrentState: function(id) {
 
 predictState: function(id) {
 	if (!lookupState(id)) throw Error('Invalid state ID: ' + id);
-	nextState = id;
+	predictedState = id;
 	return true;
 },
 
 cancelState: function(id) {
 	if (currentState === id) return false;
-	if (nextState !== id) return true;
-	nextState = undefined;
+	if (predictedState !== id) return true;
+	predictedState = undefined;
 	return true;
 },
 
 confirmState: function(id, useReplace) { // TODO can't confirmState during popstate
 	if (currentState === id) return false;
-	if (nextState !== id) return false;
+	if (predictedState !== id) return false;
 	var state = lookupState(id);
 	var title = state.title;
 	var url = state.url;
@@ -367,7 +372,7 @@ prerender: function(url, transformId, details) {
 		});
 		return node;
 	}
-	]);	
+	]);
 },
 
 transclude: function(url, transformId, position, refNode, details) {
