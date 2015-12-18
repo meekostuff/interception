@@ -166,7 +166,9 @@ isPromise: function(object) {
 },
 
 isThenable: function(object) {
-	return object && object.then && typeof object.then === 'function';
+	return object ?
+		object.then && typeof object.then === 'function' :
+		false;
 }
 
 });
@@ -191,7 +193,7 @@ var defer = function(value) {
 	if (Promise.isPromise(value)) return value.then();
 	if (Promise.isThenable(value)) return Promise.resolve(value);
 	if (typeof value === 'function') 
-		return Promise.resolve().then(function() { value() });
+		return Promise.resolve().then(value);
 	// NOTE otherwise we have a non-thenable, non-function something
 	return Promise.resolve(value).then();
 }
@@ -234,7 +236,8 @@ return new Promise(function(resolve, reject) {
 }
 
 _.defaults(Promise, {
-	asap: asap, defer: defer, pipe: pipe, reduce: reduce
+	later: defer, // WARN some browsers already define Promise.defer
+	asap: asap, pipe: pipe, reduce: reduce
 });
 
 
@@ -1141,7 +1144,7 @@ onSubmit: function(e) { // return false means success
 triggerNavigationEvent: function(url, details, predicting) {
 	var interceptor = this;
 	var type = predicting ? 'predictnavigation' : 'requestnavigation';
-	Promise.defer(function() {
+	Promise.later(function() {
 		var acceptDefault = DOM.dispatchEvent(
 				details.element, 
 				type,

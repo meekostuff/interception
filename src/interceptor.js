@@ -524,7 +524,7 @@ onSubmit: function(e) { // return false means success
 triggerNavigationEvent: function(url, details, predicting) {
 	var interceptor = this;
 	var type = predicting ? 'predictnavigation' : 'requestnavigation';
-	Promise.defer(function() {
+	Promise.later(function() {
 		var acceptDefault = DOM.dispatchEvent(
 				details.element, 
 				type,
