@@ -49,12 +49,21 @@ var filter = function(a, fn, context) {
 	return output;
 }
 
-var find = function(a, fn, context) {
+function _find(a, fn, context, byIndex) {
 	for (var n=a.length, i=0; i<n; i++) {
 		var item = a[i];
 		var success = fn.call(context, item, i, a);
-		if (success) return item;
+		if (success) return byIndex ? i : item;
 	}
+	return byIndex ? -1 : undefined;
+}
+
+var findIndex = function(a, fn, context) {
+	return _find(a, fn, context, true);
+}
+
+var find = function(a, fn, context) {
+	return _find(a, fn, context, false);
 }
 
 var words = function(text) { return text.split(/\s+/); }
@@ -97,7 +106,7 @@ var assign = function(dest, src) {
 assign(Meeko.stuff, {
 	uc: uc, lc: lc, words: words, // string
 	contains: includes, // FIXME deprecated
-	includes: includes, forEach: forEach, some: some, every: every, map: map, filter: filter, find: find, // array
+	includes: includes, forEach: forEach, some: some, every: every, map: map, filter: filter, find: find, findIndex: findIndex, // array
 	forIn: forIn, forOwn: forOwn, isEmpty: isEmpty, defaults: defaults, assign: assign, extend: assign // object
 });
 
@@ -114,7 +123,7 @@ var _ = Meeko.stuff;
 
 var console = this.console;
 if (!console.debug) console.debug = console.log;
-var logLevels = _.words('all debug log info warn error none');
+var logLevels = _.words('all debug info warn error none');
 _.forEach(logLevels, function(level) {
 	var _level = '_' + level;
 	if (!console[level]) return;

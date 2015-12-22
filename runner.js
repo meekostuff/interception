@@ -49,12 +49,21 @@ var filter = function(a, fn, context) {
 	return output;
 }
 
-var find = function(a, fn, context) {
+function _find(a, fn, context, byIndex) {
 	for (var n=a.length, i=0; i<n; i++) {
 		var item = a[i];
 		var success = fn.call(context, item, i, a);
-		if (success) return item;
+		if (success) return byIndex ? i : item;
 	}
+	return byIndex ? -1 : undefined;
+}
+
+var findIndex = function(a, fn, context) {
+	return _find(a, fn, context, true);
+}
+
+var find = function(a, fn, context) {
+	return _find(a, fn, context, false);
 }
 
 var words = function(text) { return text.split(/\s+/); }
@@ -97,7 +106,7 @@ var assign = function(dest, src) {
 assign(Meeko.stuff, {
 	uc: uc, lc: lc, words: words, // string
 	contains: includes, // FIXME deprecated
-	includes: includes, forEach: forEach, some: some, every: every, map: map, filter: filter, find: find, // array
+	includes: includes, forEach: forEach, some: some, every: every, map: map, filter: filter, find: find, findIndex: findIndex, // array
 	forIn: forIn, forOwn: forOwn, isEmpty: isEmpty, defaults: defaults, assign: assign, extend: assign // object
 });
 
@@ -114,7 +123,7 @@ var _ = Meeko.stuff;
 
 var console = this.console;
 if (!console.debug) console.debug = console.log;
-var logLevels = _.words('all debug log info warn error none');
+var logLevels = _.words('all debug info warn error none');
 _.forEach(logLevels, function(level) {
 	var _level = '_' + level;
 	if (!console[level]) return;
@@ -832,6 +841,69 @@ return historyManager;
 
 })();
 
+/*
+	Cache
+*/
+var Cache = Meeko.Cache = (function() {
+
+var defaults = {
+	match: matchRequest
+}
+
+var Cache = function(options) {
+	this.store = [];
+	this.options = {};
+	_.assign(this.options, defaults);
+	if (options) _.assign(this.options, options);
+}
+
+function matchRequest(a, b) { // default cache.options.match
+	if (a.url !== b.url) return false;
+	return true;
+}
+
+function getIndex(cache, request) {
+	return _.findIndex(cache.store, function(item) {
+		return cache.options.match(item.request, request);
+	});
+}
+
+function getItem(cache, request) {
+	var i = getIndex(cache, request);
+	if (i < 0) return;
+	return cache.store[i];
+}
+
+
+_.assign(Cache.prototype, {
+
+put: function(request, response) {
+	var cache = this;
+	cache['delete'](request); // FIXME use a compressor that accepts this
+	cache.store.push({
+		request: request,
+		response: response
+	});
+},
+
+match: function(request) {
+	var cache = this;
+	var item = getItem(cache, request);
+	if (item) return item.response;
+},
+
+'delete': function(request) { // FIXME only deletes first match
+	var cache = this;
+	var i = getIndex(cache, request);
+	if (i < 0) return;
+	cache.store.splice(i, 1);
+}
+
+});
+
+return Cache;
+
+})();
 
 /*
 	interceptor
@@ -953,7 +1025,7 @@ start: function(options) {
 	]);
 },
 
-bfCache: {},
+bfCache: {}, // FIXME this should be private or protected
 
 navigate: function(url, useReplace) {
 	var interceptor = this;
@@ -996,11 +1068,27 @@ popStateHandler: function(nextState, prevState) {
 	DOM.insertNode('replace', document.body, node);
 },
 
-transclusionCache: [],
+transclusionCache: new Cache({ // FIXME should be private or protected
+	match: function(a, b) {
+		if (a.url !== b.url) return false;
+		if (a.transform != b.transform) return false;
+		if (a.main != b.main) return false;
+		return true;
+	}
+}),
 
 prerender: function(url, transformId, details) {
 	var interceptor = this;
 
+	var request = {
+		url: url,
+		transform: transformId,
+		main: details && details.main
+	};
+
+	var response = interceptor.transclusionCache.match(request);
+	if (response) return Promise.resolve(response.node);
+		
 	return Promise.pipe(url, [
 	function(url) {
 		return interceptor.fetch(url);
@@ -1009,12 +1097,11 @@ prerender: function(url, transformId, details) {
 		return interceptor.transform(doc, transformId, details);
 	},
 	function(node) {
-		interceptor.transclusionCache.push({
+		var response = {
 			url: url,
-			transform: transformId,
-			details: details,
 			node: node
-		});
+		}
+		interceptor.transclusionCache.put(request, response);
 		return node;
 	}
 	]);
