@@ -349,7 +349,7 @@ start: function(options) {
 
 		});
 
-		_.forEach(_.words('sbumit'), function(type) { // FIXME touchstart, etc
+		_.forEach(_.words('submit'), function(type) { // FIXME touchstart, etc
 
 			DOM.manageEvent(type);
 			window.addEventListener(type, function(e) {
