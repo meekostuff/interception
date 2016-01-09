@@ -906,6 +906,83 @@ return Cache;
 })();
 
 /*
+	EventTarget is for internal use only.
+	It is used for adding (or getting) a fake EventTarget interface on an object
+		`EventTarget.apply(target)` adds the interface
+		`EventTarget(target)` gets the interface
+*/
+function EventTarget(target) {
+	if (this === self) {
+		if (target) return target;
+		return new EventTarget();
+	}
+	this._listenerTable = {};
+	if (this instanceof EventTarget) return;
+	_.assign(this, EventTarget.prototype);
+}
+
+_.assign(EventTarget.prototype, {
+
+getEventListeners: function(type) {
+	var listeners = this._listenerTable[type];
+	return listeners ? listeners : [];
+},
+	
+addEventListener: function(type, listener) {
+	var listeners = this._listenerTable[type];
+	if (!listeners) listeners = this._listenerTable[type] = [];
+	listeners.push(listener);
+}
+
+});
+
+/*
+	ExtendableEvent is for internal use only.
+	It is a good-enough substitute for 
+		https://developer.mozilla.org/en-US/docs/Web/API/ExtendableEvent
+*/
+function ExtendableEvent() {
+	this.timeStamp = Date.now();
+	this._deferrers = [];
+}
+
+_.assign(ExtendableEvent.prototype, {
+	
+dispatch: function(target) {
+	var event = this;
+	if (!event.type) throw Error('Event has not been initialized');
+	if (event.target) throw Error('Event already dispatched');
+	event.target = target;
+	var eventTarget = EventTarget(target);
+	var listeners = eventTarget.getEventListeners(event.type);
+	_.forEach(listeners, function(listener) {
+		try {
+			listener(event);
+		}
+		catch (err) {
+			event.waitUntil( Promise.reject(err) );
+		}
+	});
+	return Promise.all(this._deferrers);
+},
+
+initEvent: function(type) {
+	this.type = type;
+},
+
+waitUntil: function(fu) {
+	this._deferrers.push(fu);
+	if (this.callback) this.callback(fu);
+}
+
+});
+
+_.forEach(
+	_.words('preventDefault stopPropagation stopImmediatePropagation'), 
+	function(name) { ExtendableEvent.prototype[name] = function() {} }
+);
+
+/*
 	interceptor
 */
 
@@ -919,11 +996,13 @@ location._replace = location.replace;
 location.replace = function() { console.warn('location.replace() is no-op.'); }
 
 var started = false;
-domLoaded.then(function() { // fallback
-	if (!started) interceptor.start({
-		
-	});
+domLoaded.then(function() {
+	if (!started) interceptor.start();
 });
+
+var defaultTransform = DEFAULT_TRANSFORM_ID;
+
+EventTarget.apply(interceptor);
 
 // FIXME interceptor methods - apart from start() - should throw until start()
 _.assign(interceptor, {
@@ -934,9 +1013,15 @@ inScope: function(url) {
 	return url.indexOf(this.scope) === 0;
 },
 
-DEFAULT_TRANSFORM_ID: DEFAULT_TRANSFORM_ID,
+getDefaultTransform: function() { 
+	return defaultTransform;
+},
 
-start: function(options) {
+setDefaultTransform: function(name) {
+	defaultTransform = name;
+},
+
+start: function() {
 	if (started) {
 		console.warn('Ignoring repeated call to interceptor.start()');
 		return;
@@ -990,11 +1075,22 @@ start: function(options) {
 		});
 	},
 
-	function() { return options && options.waitUntil; },
+	function() {
+		var event = new ExtendableEvent();
+		event.initEvent('install');
+		return event.dispatch(interceptor);
+	},		
 
 	function() {
-		if (!interceptor.getTransformer(DEFAULT_TRANSFORM_ID)) {
-			interceptor.registerTransformer(DEFAULT_TRANSFORM_ID, {
+		var event = new ExtendableEvent();
+		event.initEvent('activate');
+		return event.dispatch(interceptor);
+	},		
+
+	function() {
+		var transformId = interceptor.getDefaultTransform();
+		if (!interceptor.getTransformer(transformId)) {
+			interceptor.registerTransformer(transformId, {
 				type: 'body'
 			});
 		}
@@ -1010,7 +1106,8 @@ start: function(options) {
 			title: doc.title
 		});
 		document.title = doc.title;
-		return interceptor.transclude(doc, DEFAULT_TRANSFORM_ID, 'replace', document.body);
+		var transformId = interceptor.getDefaultTransform();
+		return interceptor.transclude(doc, transformId, 'replace', document.body);
 	},
 
 	function() {
@@ -1044,7 +1141,8 @@ navigate: function(url, useReplace) {
 
 	function() {
 		historyManager.predictState(nextState);
-		return interceptor.prerender(url, DEFAULT_TRANSFORM_ID);
+		var transformId = interceptor.getDefaultTransform();
+		return interceptor.prerender(url, transformId);
 	},
 	function(node) {
 		var prevState = historyManager.getCurrentState();
