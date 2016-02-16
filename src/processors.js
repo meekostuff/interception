@@ -15,9 +15,10 @@ var document = window.document;
 
 var _ = Meeko.stuff;
 var DOM = Meeko.DOM;
-var Task = Meeko.Task;
-var Promise = Meeko.Promise;
-var interceptor = Meeko.interceptor;
+var Promise = window.Promise;
+var filters = Meeko.filters;
+var decoders = Meeko.decoders;
+var processors = Meeko.processors;
 
 var BodyProcessor = (function() {
 
@@ -48,7 +49,7 @@ transform: function(provider, details) { // TODO how to use details?
 return BodyProcessor;
 })();
 
-interceptor.registerProcessor('body', BodyProcessor);
+processors.set('body', BodyProcessor);
 
 var MainProcessor = (function() {
 
@@ -87,7 +88,7 @@ transform: function(provider, details) { // TODO how to use details?
 return MainProcessor;
 })();
 
-interceptor.registerProcessor('main', MainProcessor);
+processors.set('main', MainProcessor);
 
 
 var ScriptProcessor = (function() {
@@ -128,16 +129,16 @@ transform: function(provider, details) {
 return ScriptProcessor;
 })();
 
-interceptor.registerProcessor('script', ScriptProcessor);
+processors.set('script', ScriptProcessor);
 
 
 _.assign(classnamespace, {
 
 BodyProcessor: BodyProcessor,
 MainProcessor: MainProcessor,
-ScriptProcessor: ScriptProcessor,
+ScriptProcessor: ScriptProcessor
 
 });
 
 
-}).call(this, Meeko.interceptor);
+}).call(this, Meeko);

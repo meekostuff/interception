@@ -26,7 +26,7 @@ default: ${TARGETS}
 
 all: ${ALL_TARGETS}
 
-runner.js: src/stuff.js src/DOM.js src/interceptor.js src/processors.js 
+runner.js: src/stuff.js src/DOM.js src/transforms.js src/processors.js src/interceptor.js 
 	cat ${.ALLSRC} > ${.TARGET}
 
 %.min.js: %.js

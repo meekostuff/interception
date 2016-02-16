@@ -23,6 +23,8 @@ var _ = Meeko.stuff;
 var DOM = Meeko.DOM;
 var URL = Meeko.URL;
 var Promise = window.Promise;
+var transforms = Meeko.transforms;
+
 
 /*
 	domLoaded - intercepts DOMContentLoaded and window.onload
@@ -460,8 +462,8 @@ start: function() {
 
 	function() {
 		var transformId = interceptor.getDefaultTransform();
-		if (!interceptor.getTransformer(transformId)) {
-			interceptor.registerTransformer(transformId, {
+		if (!transforms.has(transformId)) {
+			transforms.set(transformId, {
 				type: 'body'
 			});
 		}
@@ -597,10 +599,7 @@ transclude: function(url, transformId, position, refNode, details) {
 
 transform: function(frag, transformId, details) {
 	var interceptor = this;
-	var transformerList = interceptor.getTransformer(transformId);
-	return Promise.reduce(frag, transformerList, function(fragment, transformer) {
-		return transformer.transform(fragment, details);
-	})
+	return transforms.transform(frag, transformId, details)
 	.then(function(frag) {
 		if (frag.ownerDocument === document) return frag;
 		// NOTE When inserting Custom-Elements into `document` 
@@ -883,71 +882,4 @@ function poll(test, callback) {
 }
 
 
-// SimpleTransformer
-var Transformer = function(type, template, format, options) {
-	var transformer = this;
-	var processor = transformer.processor = interceptor.createProcessor(type, options);
-	if (template != null) processor.loadTemplate(template);
-	transformer.format = format;
-}
-
-_.assign(Transformer.prototype, {
-
-transform: function(srcNode, details) {
-	var transformer = this;
-	var provider = {
-		srcNode: srcNode
-	}
-	if (transformer.format) {
-		provider = interceptor.createDecoder(transformer.format);
-		provider.init(srcNode);
-	}
-	return transformer.processor.transform(provider, details);
-}
-
-});
-
-_.assign(interceptor, {
-
-transformers: {},
-
-registerTransformer: function(defId, defList) {
-	if (!Array.isArray(defList)) defList = [ defList ];
-	this.transformers[defId] = _.map(defList, function(def) {
-		// create simple transformer
-		return new Transformer(def.type, def.template, def.format, def.options);
-	});
-},
-
-getTransformer: function(defId) {
-	return this.transformers[defId];
-},
-
-decoders: {},
-
-registerDecoder: function(type, constructor) {
-	this.decoders[type] = constructor;
-},
-
-createDecoder: function(type, options) {
-	return new this.decoders[type](options);
-},
-
-processors: {},
-
-registerProcessor: function(type, constructor) {
-	this.processors[type] = constructor;
-},
-
-createProcessor: function(type, options) {
-	return new this.processors[type](options, this.filters);
-},
-
-registerFilter: function(name, fn) {
-	this.filters.register(name, fn);
-}
-
-});
-
-}).call(this); // WARN don't change. This matches var declarations at top
-
+}).call(this);

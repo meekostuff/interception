@@ -627,6 +627,286 @@ return {
 
 
 }).call(this);
+(function(classnamespace) {
+
+var window = this;
+var document = window.document;
+
+var _ = Meeko.stuff;
+var DOM = Meeko.DOM;
+var Promise = window.Promise;
+
+var Store = function() {
+	this.clear();
+}
+
+_.assign(Store.prototype, {
+
+clear: function() {
+	this._store = Object.create(null);
+},
+
+has: function(key) {
+	return key in this._store;
+},
+
+get: function(key) {
+	return this._store[key];
+},
+
+set: function(key, value) {
+	this._store[key] = value;
+},
+
+'delete': function(key) {
+	delete this._store[key];
+}
+
+});
+
+
+
+var filters = new Store();
+
+_.assign(filters, {
+
+filter: function(name, value, params) {
+        var fn = this.get(name);
+        // NOTE filter functions should only accept string_or_number_or_boolean
+        // FIXME Need to wrap fn() to assert / cast supplied value and accept params
+        var args = params.slice(0);
+        args.unshift(value);
+        return fn.apply(undefined, args);
+}
+
+});
+
+var decoders = new Store();
+
+_.assign(decoders, {
+
+decode: function(type, srcNode, options) {
+	var decoder = this.get(type);
+	var provider = new decoder(options);
+	provider.init(srcNode);
+	return provider;
+}
+
+});
+
+var processors = new Store();
+
+_.assign(processors, {
+
+create: function(type, template, options) {
+	var def = this.get(type);
+	var processor = new def(options, filters);
+	if (template != null) processor.loadTemplate(template);
+	return processor;
+}
+
+});
+
+
+// SimpleTransformer
+var Transformer = function(type, template, format, options) {
+	var transformer = this;
+	var processor = transformer.processor = processors.create(type, template, options);
+	transformer.format = format;
+}
+
+_.assign(Transformer.prototype, {
+
+transform: function(srcNode, details) {
+	var transformer = this;
+	var provider = {
+		srcNode: srcNode
+	}
+	if (transformer.format) {
+		provider = decoder.decode(transformer.format, srcNode);
+	}
+	return transformer.processor.transform(provider, details);
+}
+
+});
+
+var transforms = new Store();
+
+_.assign(transforms, {
+
+transform: function(frag, transformId, details) {
+	var transformerList = this.get(transformId);
+	return Promise.reduce(frag, transformerList, function(fragment, transformer) {
+		return transformer.transform(fragment, details);
+	});
+},
+
+set: function(defId, defList) {
+	if (!Array.isArray(defList)) defList = [ defList ];
+	this._store[defId] = _.map(defList, function(def) {
+		// create simple transformer
+		return new Transformer(def.type, def.template, def.format, def.options);
+	});
+},
+
+});
+
+_.assign(classnamespace, {
+
+filters: filters,
+decoders: decoders,
+processors: processors,
+transforms: transforms
+
+});
+
+
+}).call(this, Meeko); // WARN don't change. This matches var declarations at top
+
+/*
+ * Processors and Decoders
+ * Copyright 2014-2015 Sean Hogan (http://meekostuff.net/)
+ * Mozilla Public License v2.0 (http://mozilla.org/MPL/2.0/)
+ */
+
+/* TODO
+	+ XSLT transforms (in processors.js)
+ */
+
+(function(classnamespace) {
+
+var window = this;
+var document = window.document;
+
+var _ = Meeko.stuff;
+var DOM = Meeko.DOM;
+var Promise = window.Promise;
+var filters = Meeko.filters;
+var decoders = Meeko.decoders;
+var processors = Meeko.processors;
+
+var BodyProcessor = (function() {
+
+function BodyProcessor(options, framesetDef) {
+	this.options = options; // FIXME should be shallow copy
+}
+
+_.defaults(BodyProcessor.prototype, {
+
+loadTemplate: function(template) {
+	if (template) console.warn('"body" transforms do not use templates');
+},
+
+transform: function(provider, details) { // TODO how to use details?
+	var srcNode = provider.srcNode;
+	var srcDoc = srcNode.nodeType === 9 ? srcNode : srcNode.ownerDocument;
+	if (srcNode === srcDoc) return srcDoc.body;
+	if (srcNode === srcDoc.body) return srcNode;
+
+	// FIXME what about ancestor-nodes of <body> or nodes in <head>
+	var body = srcDoc.createElement('body');
+	body.appendChild(srcNode);
+	return body;
+}
+	
+});
+
+return BodyProcessor;
+})();
+
+processors.set('body', BodyProcessor);
+
+var MainProcessor = (function() {
+
+function MainProcessor(options, framesetDef) {
+	this.options = options; // FIXME should be shallow copy
+}
+
+_.defaults(MainProcessor.prototype, {
+
+loadTemplate: function(template) {
+	if (template) console.warn('"main" transforms do not use templates');
+},
+
+transform: function(provider, details) { // TODO how to use details?
+	var srcNode = provider.srcNode;
+	var srcDoc = srcNode.nodeType === 9 ? srcNode : srcNode.ownerDocument;
+	var main;
+	if (details.main) main = DOM.find(details.main, srcNode);
+	if (!main && DOM.matches(srcNode, 'main, [role=main]')) main = srcNode;
+	if (!main) main = DOM.find('main, [role=main]', srcNode);
+	if (!main && srcNode === srcDoc.body) main = srcNode;
+	if (!main && srcNode === srcDoc) main = srcDoc.body;
+	// FIXME what about ancestor-nodes of <body> or nodes in <head>
+	if (!main) main = srcNode;
+
+	if (this.options && this.options.inclusive) return main;
+
+	var frag = srcDoc.createDocumentFragment();
+	var node;
+	while (node = main.firstChild) frag.appendChild(node); // NOTE no adoption
+	return frag;
+}
+	
+});
+
+return MainProcessor;
+})();
+
+processors.set('main', MainProcessor);
+
+
+var ScriptProcessor = (function() {
+
+function ScriptProcessor(options, framesetDef) {
+	this.frameset = framesetDef;
+	this.options = options; // FIXME should be shallow copy
+}
+
+_.defaults(ScriptProcessor.prototype, {
+
+loadTemplate: function(template) {
+	if (!template) {
+		console.warn('"script" transform template not defined');
+		return;
+	}
+	if (!(typeof template === 'function' || typeof template.transform === 'function')) {
+		console.warn('"script" transform template not valid');
+		return;
+	}
+	this.processor = template;
+},
+
+transform: function(provider, details) {
+	var srcNode = provider.srcNode;
+	if (!this.processor) {
+		console.warn('"script" transform template not valid');
+		return;
+	}
+	if (typeof this.processor === 'function') 
+		return this.processor(srcNode, details);
+	return this.processor.transform(srcNode, details);
+}
+	
+});
+
+
+return ScriptProcessor;
+})();
+
+processors.set('script', ScriptProcessor);
+
+
+_.assign(classnamespace, {
+
+BodyProcessor: BodyProcessor,
+MainProcessor: MainProcessor,
+ScriptProcessor: ScriptProcessor
+
+});
+
+
+}).call(this, Meeko);
 /*
  * Interceptor
  * Copyright 2012-2015 Sean Hogan (http://meekostuff.net/)
@@ -652,6 +932,8 @@ var _ = Meeko.stuff;
 var DOM = Meeko.DOM;
 var URL = Meeko.URL;
 var Promise = window.Promise;
+var transforms = Meeko.transforms;
+
 
 /*
 	domLoaded - intercepts DOMContentLoaded and window.onload
@@ -1089,8 +1371,8 @@ start: function() {
 
 	function() {
 		var transformId = interceptor.getDefaultTransform();
-		if (!interceptor.getTransformer(transformId)) {
-			interceptor.registerTransformer(transformId, {
+		if (!transforms.has(transformId)) {
+			transforms.set(transformId, {
 				type: 'body'
 			});
 		}
@@ -1226,10 +1508,7 @@ transclude: function(url, transformId, position, refNode, details) {
 
 transform: function(frag, transformId, details) {
 	var interceptor = this;
-	var transformerList = interceptor.getTransformer(transformId);
-	return Promise.reduce(frag, transformerList, function(fragment, transformer) {
-		return transformer.transform(fragment, details);
-	})
+	return transforms.transform(frag, transformId, details)
 	.then(function(frag) {
 		if (frag.ownerDocument === document) return frag;
 		// NOTE When inserting Custom-Elements into `document` 
@@ -1512,214 +1791,4 @@ function poll(test, callback) {
 }
 
 
-// SimpleTransformer
-var Transformer = function(type, template, format, options) {
-	var transformer = this;
-	var processor = transformer.processor = interceptor.createProcessor(type, options);
-	if (template != null) processor.loadTemplate(template);
-	transformer.format = format;
-}
-
-_.assign(Transformer.prototype, {
-
-transform: function(srcNode, details) {
-	var transformer = this;
-	var provider = {
-		srcNode: srcNode
-	}
-	if (transformer.format) {
-		provider = interceptor.createDecoder(transformer.format);
-		provider.init(srcNode);
-	}
-	return transformer.processor.transform(provider, details);
-}
-
-});
-
-_.assign(interceptor, {
-
-transformers: {},
-
-registerTransformer: function(defId, defList) {
-	if (!Array.isArray(defList)) defList = [ defList ];
-	this.transformers[defId] = _.map(defList, function(def) {
-		// create simple transformer
-		return new Transformer(def.type, def.template, def.format, def.options);
-	});
-},
-
-getTransformer: function(defId) {
-	return this.transformers[defId];
-},
-
-decoders: {},
-
-registerDecoder: function(type, constructor) {
-	this.decoders[type] = constructor;
-},
-
-createDecoder: function(type, options) {
-	return new this.decoders[type](options);
-},
-
-processors: {},
-
-registerProcessor: function(type, constructor) {
-	this.processors[type] = constructor;
-},
-
-createProcessor: function(type, options) {
-	return new this.processors[type](options, this.filters);
-},
-
-registerFilter: function(name, fn) {
-	this.filters.register(name, fn);
-}
-
-});
-
-}).call(this); // WARN don't change. This matches var declarations at top
-
-/*
- * Processors and Decoders
- * Copyright 2014-2015 Sean Hogan (http://meekostuff.net/)
- * Mozilla Public License v2.0 (http://mozilla.org/MPL/2.0/)
- */
-
-/* TODO
-	+ XSLT transforms (in processors.js)
- */
-
-(function(classnamespace) {
-
-var window = this;
-var document = window.document;
-
-var _ = Meeko.stuff;
-var DOM = Meeko.DOM;
-var Task = Meeko.Task;
-var Promise = Meeko.Promise;
-var interceptor = Meeko.interceptor;
-
-var BodyProcessor = (function() {
-
-function BodyProcessor(options, framesetDef) {
-	this.options = options; // FIXME should be shallow copy
-}
-
-_.defaults(BodyProcessor.prototype, {
-
-loadTemplate: function(template) {
-	if (template) console.warn('"body" transforms do not use templates');
-},
-
-transform: function(provider, details) { // TODO how to use details?
-	var srcNode = provider.srcNode;
-	var srcDoc = srcNode.nodeType === 9 ? srcNode : srcNode.ownerDocument;
-	if (srcNode === srcDoc) return srcDoc.body;
-	if (srcNode === srcDoc.body) return srcNode;
-
-	// FIXME what about ancestor-nodes of <body> or nodes in <head>
-	var body = srcDoc.createElement('body');
-	body.appendChild(srcNode);
-	return body;
-}
-	
-});
-
-return BodyProcessor;
-})();
-
-interceptor.registerProcessor('body', BodyProcessor);
-
-var MainProcessor = (function() {
-
-function MainProcessor(options, framesetDef) {
-	this.options = options; // FIXME should be shallow copy
-}
-
-_.defaults(MainProcessor.prototype, {
-
-loadTemplate: function(template) {
-	if (template) console.warn('"main" transforms do not use templates');
-},
-
-transform: function(provider, details) { // TODO how to use details?
-	var srcNode = provider.srcNode;
-	var srcDoc = srcNode.nodeType === 9 ? srcNode : srcNode.ownerDocument;
-	var main;
-	if (details.main) main = DOM.find(details.main, srcNode);
-	if (!main && DOM.matches(srcNode, 'main, [role=main]')) main = srcNode;
-	if (!main) main = DOM.find('main, [role=main]', srcNode);
-	if (!main && srcNode === srcDoc.body) main = srcNode;
-	if (!main && srcNode === srcDoc) main = srcDoc.body;
-	// FIXME what about ancestor-nodes of <body> or nodes in <head>
-	if (!main) main = srcNode;
-
-	if (this.options && this.options.inclusive) return main;
-
-	var frag = srcDoc.createDocumentFragment();
-	var node;
-	while (node = main.firstChild) frag.appendChild(node); // NOTE no adoption
-	return frag;
-}
-	
-});
-
-return MainProcessor;
-})();
-
-interceptor.registerProcessor('main', MainProcessor);
-
-
-var ScriptProcessor = (function() {
-
-function ScriptProcessor(options, framesetDef) {
-	this.frameset = framesetDef;
-	this.options = options; // FIXME should be shallow copy
-}
-
-_.defaults(ScriptProcessor.prototype, {
-
-loadTemplate: function(template) {
-	if (!template) {
-		console.warn('"script" transform template not defined');
-		return;
-	}
-	if (!(typeof template === 'function' || typeof template.transform === 'function')) {
-		console.warn('"script" transform template not valid');
-		return;
-	}
-	this.processor = template;
-},
-
-transform: function(provider, details) {
-	var srcNode = provider.srcNode;
-	if (!this.processor) {
-		console.warn('"script" transform template not valid');
-		return;
-	}
-	if (typeof this.processor === 'function') 
-		return this.processor(srcNode, details);
-	return this.processor.transform(srcNode, details);
-}
-	
-});
-
-
-return ScriptProcessor;
-})();
-
-interceptor.registerProcessor('script', ScriptProcessor);
-
-
-_.assign(classnamespace, {
-
-BodyProcessor: BodyProcessor,
-MainProcessor: MainProcessor,
-ScriptProcessor: ScriptProcessor,
-
-});
-
-
-}).call(this, Meeko.interceptor);
+}).call(this);
