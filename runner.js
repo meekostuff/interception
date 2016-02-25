@@ -735,8 +735,10 @@ var transforms = new Store();
 _.assign(transforms, {
 
 transform: function(frag, transformId, details) {
-	var transformerList = this.get(transformId);
+	var transforms = this;
+	var transformerList = transforms.get(transformId);
 	return Promise.reduce(frag, transformerList, function(fragment, transformer) {
+		if (typeof transformer === 'string') return transforms.transform(fragment, transformer, details);
 		return transformer.transform(fragment, details);
 	});
 },
@@ -745,6 +747,7 @@ set: function(defId, defList) {
 	if (!Array.isArray(defList)) defList = [ defList ];
 	this._store[defId] = _.map(defList, function(def) {
 		// create simple transformer
+		if (typeof def === 'string') return def;
 		return new Transformer(def.type, def.template, def.format, def.options);
 	});
 },
