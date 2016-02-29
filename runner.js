@@ -1435,6 +1435,7 @@ navigate: function(url, useReplace) {
 		interceptor.bfCache[prevState] = {
 			body: document.body
 		};
+		window.scrollTo(0, 0); // FIXME handle a URL with #hash
 		DOM.insertNode('replace', document.body, node);
 	}
 	
